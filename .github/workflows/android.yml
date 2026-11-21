@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
 
           if [ -z "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
-            echo "HAS_GOOGLE_SERVICES=false" >> "$GITHUB_ENV"
+            echo "HAS_GOOGLE_SERVICES=true" >> "$GITHUB_ENV"
             echo "GOOGLE_SERVICES_JSON_BASE64 is not configured; using a CI-only Firebase placeholder for compile checks."
             mkdir -p app
             cat > app/google-services.json <<'JSON'
