@@ -34,32 +34,6 @@ jobs:
           fetch-depth: 0
           submodules: "recursive"
 
-      - name: Download Discord Social SDK
-        env:
-          GH_TOKEN: ${{ secrets.DISCORD_SDK_TOKEN }}
-          DISCORD_SDK_REPOSITORY: ${{ vars.DISCORD_SDK_REPOSITORY }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GH_TOKEN:-}" ] || [ -z "${DISCORD_SDK_REPOSITORY:-}" ]; then
-            echo "::error::Configure the DISCORD_SDK_REPOSITORY Actions variable and DISCORD_SDK_TOKEN Actions secret."
-            exit 1
-          fi
-
-          mkdir -p app/libs
-          gh release download 'discord-sdk-1.10.19337' \
-            --repo "$DISCORD_SDK_REPOSITORY" \
-            --pattern 'discord_partner_sdk.aar' \
-            --dir app/libs \
-            --clobber
-
-          if ! printf '%s  %s\n' \
-            'b1b2491f1e1848c79fd6f1986d5aa1e0c8019e88a6e62c7be06b89e8e4870933' \
-            'app/libs/discord_partner_sdk.aar' | sha256sum --check --status; then
-            echo "::error::The Discord SDK AAR does not match the pinned 1.10.19337 build."
-            exit 1
-          fi
-
       - name: Prepare google-services.json
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -163,6 +137,18 @@ jobs:
         with:
           ndk-version: r28c
           link-to-sdk: true
+
+      - name: Build Discord SDK stand-in
+        run: |
+          set -euo pipefail
+          BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GX=app/src/main/jniLibs/arm64-v8a/libgxcore.so
+          "$BIN/llvm-readelf" --dyn-syms "$GX" | awk '$7=="UND" && $8 ~ /^Discord_/ {print $8}' | sed 's/@.*//' | sort -u > discord_syms.txt
+          test -s discord_syms.txt
+          wc -l discord_syms.txt
+          awk '{printf "long %s(void){return 0;}\n",$1}' discord_syms.txt > discord_stub.c
+          "$BIN/aarch64-linux-android28-clang" -shared -nostdlib -fPIC -Wl,-soname,libdiscord_partner_sdk.so -Wl,-z,max-page-size=16384 -o app/src/main/jniLibs/arm64-v8a/libdiscord_partner_sdk.so discord_stub.c
+          "$BIN/llvm-readelf" --dyn-syms app/src/main/jniLibs/arm64-v8a/libdiscord_partner_sdk.so | grep -c " Discord_"
 
       - name: Grant Execute Permission to gradlew
         run: chmod +x ./gradlew
